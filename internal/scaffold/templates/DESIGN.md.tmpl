@@ -1,0 +1,85 @@
+# {{.PluginName}} 业务价值 Spec 体系设计
+
+> 状态：脚手架生成，待补全 TODO 段落
+> 范围：{{.PluginName}} 插件全部组件（TODO：列出组件仓库清单）
+
+## 1. 背景与目标
+
+TODO：描述本插件的组件构成与现状（现有文档/测试资产、缺少统一业务价值视图的具体表现）。
+
+**目标**：建立一个集中维护、按业务能力域组织、可用于多方验收（产品/客户看价值层，QA 看验收标准层）的 spec 体系，并通过 CI 漂移检测保证 spec 与代码持续一致。
+
+## 2. 关键决策（通用契约，沿用 spec-driftcheck 体系）
+
+| 决策点 | 选择 | 理由 |
+|---|---|---|
+| 验收主体 | 多方共用，spec 分层 | 能力/价值层给产品与客户，验收标准层给 QA |
+| 同步语义 | 漂移检测（非全自动生成） | spec 由人维护权威版本，机器检测过期并提醒，人裁决；保证业务叙事质量，防文档腐烂 |
+| 组织方式 | 集中式，按业务能力域（非组件）组织 | 验收视角统一；放在插件主仓库内 |
+| 体系架构 | 独立业务用例型（SDD） | 验收需求是**独立的业务价值用例**（EARS Requirement + GWT Scenario），**不引用任何现有测试资产** |
+| 验收执行 | AI 按 spec 临时生成代码 | 发版验收时由 AI 逐 Scenario 临时生成验收代码执行并出报告；生成物是一次性产物 |
+
+## 3. 业务能力域划分
+
+TODO：由组件能力合并去重而来，按"用户可感知的业务价值"组织。参考划分方法见 playbook 第 2 步。
+
+| 能力域 | 用户价值（一句话） | 主要贡献组件 |
+|---|---|---|
+| D1 TODO | TODO | TODO |
+
+能力域划分允许演进：新增能力域需在 INDEX.md 登记并建目录，编号递增不复用。
+
+## 4. 目录结构
+
+```
+spec/
+├── DESIGN.md                         # 本文档
+├── INDEX.md                          # 能力全景 + 验收需求汇总表（产品/客户入口）
+├── capabilities/
+│   └── D<n>-<slug>/
+│       ├── spec.md                   # 业务价值 + 验收需求 + 验收门禁
+│       └── anchors.yaml              # 能力 → 仓库路径/CRD 锚点（代码变更信号源）
+├── sync/
+│   ├── drift-check.yaml              # 结构校验配置（忽略规则）
+│   ├── repos.yaml                    # 组件仓库 git 地址 + 分支映射
+│   └── tasks/                        # 漂移检测 Tekton Task / 定时资源
+└── reports/                          # 发版验收报告归档
+    └── <version>/acceptance-report.md
+```
+
+## 5. spec.md 格式契约（driftcheck 解析契约，必须遵守）
+
+每个能力域 spec.md 分三层：`## 业务价值`（产品/客户读，人工撰写）、`## 验收需求`（验收唯一权威）、`## 验收门禁`（达标线）。
+
+- **REQ 头**：`### REQ-<能力域>-<两位序号>: <标题> (P0|P1|P2[, planned])`；ID 全局唯一，废弃不复用（标题后注 deprecated 并保留）；`planned` = 功能未交付，验收跳过；
+- **Requirement 主句**：一句中文叙述 + `SHALL` 关键字（EARS 句式：事件驱动 WHEN…SHALL、状态驱动 WHILE…SHALL、异常 IF…THEN…SHALL、普遍 SHALL），**一个 REQ 只说一件事**；
+- **Scenario**：`#### Scenario: <场景名>` + `- GIVEN/WHEN/THEN`（AND 可选）项目符号；每个 REQ 至少 1 个 Scenario；一个 Scenario 一个判定；
+- **独立于实现**：场景只用业务语言与可观察结果，**禁止引用 feature 文件、内部函数、UI 控件**；CRD 字段例外（产品对外契约），写全限定路径（如 `spec.timeouts.pipeline`）；
+- **可量化**：禁"合理/正常/适当/尽快/友好"等模糊词；时限、数量、状态值必须明确——这是 AI 能生成确定断言的前提；
+- **中文叙事 + 英文大写关键字**（GIVEN/WHEN/THEN/AND/SHALL）：关键字是解析器与 AI 的稳定锚点；
+- 验收门禁默认 P0=100%、P1≥95%，各能力域可在自己的 spec.md 中覆盖。
+
+## 6. anchors.yaml schema
+
+```yaml
+capability: D1
+repos:
+  <repos.yaml 中的仓库键名>:
+    paths:                            # 路径级锚点：组件 PR 触碰即提醒
+      - test/integration/features/**
+    crds: [SomeKind]                  # 引用级锚点：CRD 字段 diff 检测（可选）
+```
+
+anchors 是**代码变更信号源**而非验收引用——验收需求本身独立于实现。命中只产生提醒（人裁决是否更新 spec）。误报率决定检测体系存亡。
+
+## 7. 漂移检测（两级）
+
+- **级别 1（组件仓库侧）**：PR 触发 `spec-drift-notice` Task → 变更文件 ∩ anchors 路径 → 命中发 PR 评论提醒（不阻塞合并）；
+- **级别 2（主仓库侧）**：`driftcheck check` 校验 spec 结构合法、模糊词 lint、anchors 路径有效、CRD 字段存在；每 PR + 每日定时全量。
+
+## 8. 维护工作流
+
+- **新功能**：需求阶段先写 REQ+Scenario（标 `planned`）→ 功能交付后去掉 planned，进入验收范围；
+- **行为变更**：级别 1 在组件 PR 上提醒 → 开发者提后续 PR 更新主仓库 spec；
+- **发版验收**：AI 读取 spec → 逐 Scenario 临时生成验收代码对测试集群执行 → 报告归档 `spec/reports/<version>/`；
+- **责任人**：每个能力域可设 OWNERS，spec 变更 PR 由其评审。

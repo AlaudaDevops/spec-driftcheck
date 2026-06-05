@@ -1,0 +1,38 @@
+# 每日全量漂移检测。部署前提：集群已安装提供 ScheduledTrigger CRD 的组件（如 tektoncd-enhancement）。
+# apply 由人工执行：kubectl apply -f spec/sync/tasks/scheduled-drift-check.yaml -n <tekton-namespace>
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: spec-drift-check-daily
+spec:
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1
+      kind: PipelineRun
+      metadata:
+        generateName: spec-drift-check-daily-
+      spec:
+        pipelineSpec:
+          tasks:
+            - name: drift-check
+              taskSpec:
+                steps:
+                  - name: clone-and-check
+                    image: {{.ToolImage}}
+                    script: |
+                      #!/usr/bin/env sh
+                      set -e
+                      git clone --depth 1 {{.SpecRepoURL}}.git /workspace/repo
+                      driftcheck check \
+                        --spec-dir /workspace/repo/spec \
+                        --work-dir /tmp/driftcheck-repos \
+                        --local-repo-root /workspace/repo
+---
+apiVersion: tekton.alaudadevops.io/v1alpha1
+kind: ScheduledTrigger
+metadata:
+  name: spec-drift-check-daily
+spec:
+  schedule: "0 2 * * *"
+  timeZone: "Asia/Shanghai"
+  triggerTemplate:
+    ref: spec-drift-check-daily

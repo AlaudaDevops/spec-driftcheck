@@ -1,0 +1,50 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: spec-drift-notice
+spec:
+  description: |
+    检测 PR 变更是否触碰业务价值 spec（{{.SpecRepo}}/spec）锚点路径，
+    命中则在 PR 上发表/更新提醒评论。提醒型，不阻塞合并。
+  params:
+    - name: repo-name
+      description: anchors.yaml 中的仓库键名
+    - name: github-repo
+      description: owner/repo（当前组件仓库）
+    - name: pull-request-number
+    - name: target-branch
+      default: main
+    - name: spec-repo-url
+      default: {{.SpecRepoURL}}.git
+    - name: spec-link
+      default: {{.SpecRepoURL}}/tree/main/spec/capabilities
+    - name: tool-image
+      default: {{.ToolImage}}
+      description: 含 git 与 driftcheck 二进制的镜像；离线集群替换为内部 mirror
+  workspaces:
+    - name: source
+      description: PAC 已克隆的当前仓库
+    - name: github-token
+      description: secret workspace，须含 key `token`
+  steps:
+    - name: notice
+      image: $(params.tool-image)
+      workingDir: $(workspaces.source.path)
+      script: |
+        #!/usr/bin/env sh
+        set -e
+        GITHUB_TOKEN=$(cat $(workspaces.github-token.path)/token)
+        export GITHUB_TOKEN
+        git config --global --add safe.directory '*'
+        git fetch origin $(params.target-branch) --depth=100
+        git diff --name-only origin/$(params.target-branch)...HEAD > /tmp/changed.txt
+        echo "changed files:" && cat /tmp/changed.txt
+        git clone --depth 1 --filter=blob:none --sparse $(params.spec-repo-url) /tmp/spec-repo
+        git -C /tmp/spec-repo sparse-checkout set spec
+        driftcheck notice \
+          --repo-name $(params.repo-name) \
+          --changed-files /tmp/changed.txt \
+          --spec-dir /tmp/spec-repo/spec \
+          --spec-link $(params.spec-link) \
+          --github-repo $(params.github-repo) \
+          --pr $(params.pull-request-number)
