@@ -34,6 +34,54 @@ func TestLoadAndValidate(t *testing.T) {
 	}
 }
 
+// TestDiscoverCRDs 断言：从 CustomResourceDefinition manifest 中提取 spec.names.kind，
+// 支持多 doc yaml；普通 manifest 的 kind 不算；vendor 跳过。
+func TestDiscoverCRDs(t *testing.T) {
+	dir := t.TempDir()
+	multiDoc := `apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: foos.example.com
+spec:
+  names:
+    kind: Foo
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: not-a-crd
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: bars.example.com
+spec:
+  names:
+    kind: Bar
+`
+	if err := os.WriteFile(filepath.Join(dir, "crds.yaml"), []byte(multiDoc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// 普通资源引用 kind: Baz —— 不是 CRD 定义，不应被发现。
+	if err := os.WriteFile(filepath.Join(dir, "deploy.yaml"), []byte("kind: Baz\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// vendor 下的 CRD 应跳过。
+	if err := os.MkdirAll(filepath.Join(dir, "vendor"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	vendorCRD := "kind: CustomResourceDefinition\nspec:\n  names:\n    kind: Vendored\n"
+	if err := os.WriteFile(filepath.Join(dir, "vendor", "v.yaml"), []byte(vendorCRD), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	kinds := DiscoverCRDs(dir)
+	want := map[string]bool{"Foo": true, "Bar": true}
+	if len(kinds) != 2 || !want[kinds[0]] || !want[kinds[1]] {
+		t.Fatalf("want [Foo Bar], got %v", kinds)
+	}
+}
+
 func TestCRDDefined(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "x.yaml"), []byte("kind: ScheduledTrigger\n"), 0o644); err != nil {

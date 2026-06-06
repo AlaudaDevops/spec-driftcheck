@@ -96,6 +96,15 @@ echo "path/that/hits/anchor.yaml" > /tmp/changed.txt
 driftcheck notice --repo-name <repo-key> --changed-files /tmp/changed.txt --spec-dir spec
 ```
 
+## 新增能力的同步盲区与分层防御
+
+锚点是白名单，**白名单不认识名单外的新事物**：新增文件落在已有 glob 内（目录级锚点）→ notice 已覆盖；全新目录/全新能力 → 实时机制无信号。防御分层：
+
+1. **目录级 glob**（写锚点时就用 `dir/**` 而非具体文件）；
+2. **反向 CRD 哨兵**（check 内建）：仓库中已定义但未被任何 anchors 登记的 CRD → `crd-uncovered` finding。新 CRD ≈ 新能力面，信号强、误报低；确认无需覆盖的 kind 加入 `drift-check.yaml` 的 `ignoreCRDs`；
+3. **周期覆盖审计**（第 5 步）绑定发版流程作为前置项——新能力必然出现在产品文档/release notes，发现延迟 = 一个发版周期，对发版验收够用；
+4. **流程前移**（治本）：新功能需求阶段先写 REQ（标 planned），spec 先于代码。
+
 ## 已知坑
 
 - `planned` 判定看**功能是否交付**，不看有没有测试；

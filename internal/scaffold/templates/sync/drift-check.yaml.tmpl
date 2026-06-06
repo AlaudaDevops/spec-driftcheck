@@ -1,2 +1,5 @@
 # driftcheck check 的忽略规则：列出豁免结构校验的 REQ ID（如历史遗留条目）。
 ignore: []
+# 反向 CRD 哨兵豁免：仓库中已定义但确认无需 spec 覆盖的 CRD kind
+# （如上游内置、测试 fixture）。未豁免且未被 anchors 登记的 CRD 会报 crd-uncovered。
+ignoreCRDs: []

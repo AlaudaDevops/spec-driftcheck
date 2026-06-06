@@ -19,7 +19,7 @@ import (
 type Finding struct {
 	Capability string
 	ReqID      string // anchors/CRD 级问题为空；fuzzy-word 可留空（见 Detail）
-	Check      string // spec-structure | fuzzy-word | anchor-path | crd-defined
+	Check      string // spec-structure | fuzzy-word | anchor-path | crd-defined | crd-uncovered
 	Detail     string
 }
 
@@ -28,6 +28,8 @@ type ignoreFile struct {
 		ReqID  string `yaml:"reqId"`
 		Reason string `yaml:"reason"`
 	} `yaml:"ignore"`
+	// IgnoreCRDs 豁免反向 CRD 哨兵（如上游内置/测试 fixture 的 kind）。
+	IgnoreCRDs []string `yaml:"ignoreCRDs"`
 }
 
 // 模糊词清单：spec GWT 行不应出现这些主观/含糊措辞。
@@ -42,7 +44,7 @@ func Run(specDir, workDir, localRepoRoot string) ([]Finding, error) {
 	if err != nil {
 		return nil, err
 	}
-	ignored, err := loadIgnore(filepath.Join(specDir, "sync", "drift-check.yaml"))
+	ignored, ignoredCRDs, err := loadIgnore(filepath.Join(specDir, "sync", "drift-check.yaml"))
 	if err != nil {
 		return nil, err
 	}
@@ -70,6 +72,7 @@ func Run(specDir, workDir, localRepoRoot string) ([]Finding, error) {
 	}
 
 	var findings []Finding
+	registeredCRDs := map[string]bool{} // 全部 anchors 登记的 CRD 并集（反向哨兵基准）
 	for _, capDir := range capDirs {
 		if fi, err := os.Stat(capDir); err != nil || !fi.IsDir() {
 			continue // 跳过非目录条目（如 .DS_Store）
@@ -129,10 +132,21 @@ func Run(specDir, workDir, localRepoRoot string) ([]Finding, error) {
 					fmt.Sprintf("%s: glob %q 无匹配文件", repoName, bad)})
 			}
 			for _, crd := range ra.CRDs {
+				registeredCRDs[crd] = true
 				if !anchors.CRDDefined(repoDir, crd) {
 					findings = append(findings, Finding{capName, "", "crd-defined",
 						fmt.Sprintf("%s: 未找到 CRD %q 定义", repoName, crd)})
 				}
+			}
+		}
+	}
+
+	// 反向 CRD 哨兵：仓库中已定义但未被任何 anchors 登记的 CRD —— 可能是 spec 未覆盖的新能力面。
+	for repoName, repoDir := range repoDirCache {
+		for _, kind := range anchors.DiscoverCRDs(repoDir) {
+			if !registeredCRDs[kind] && !ignoredCRDs[kind] {
+				findings = append(findings, Finding{"", "", "crd-uncovered",
+					fmt.Sprintf("%s: CRD %q 已定义但未被任何 anchors 登记（新能力面？补 anchors+REQ 或加入 ignoreCRDs）", repoName, kind)})
 			}
 		}
 	}
@@ -189,21 +203,24 @@ func truncate(s string, max int) string {
 	return string(r[:max]) + "…"
 }
 
-func loadIgnore(path string) (map[string]bool, error) {
-	out := map[string]bool{}
+func loadIgnore(path string) (reqIDs, crds map[string]bool, err error) {
+	reqIDs, crds = map[string]bool{}, map[string]bool{}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return out, nil
+			return reqIDs, crds, nil
 		}
-		return nil, err
+		return nil, nil, err
 	}
 	var f ignoreFile
 	if err := yaml.Unmarshal(data, &f); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for _, i := range f.Ignore {
-		out[i.ReqID] = true
+		reqIDs[i.ReqID] = true
 	}
-	return out, nil
+	for _, c := range f.IgnoreCRDs {
+		crds[c] = true
+	}
+	return reqIDs, crds, nil
 }

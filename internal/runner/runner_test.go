@@ -189,6 +189,71 @@ func TestRun_SpecParseError(t *testing.T) {
 	}
 }
 
+// TestRun_CRDUncovered：仓库中已定义但未被任何 anchors 登记的 CRD → crd-uncovered finding；
+// 列入 ignoreCRDs 后豁免。
+func TestRun_CRDUncovered(t *testing.T) {
+	root := t.TempDir()
+	specDir := filepath.Join(root, "spec")
+	repoRoot := filepath.Join(root, "repo")
+	mustWrite(t, filepath.Join(repoRoot, "testing/features/ok.feature"),
+		"Feature: f\n  Scenario: 存在的场景\n    Given x\n")
+	// 已登记 CRD 的定义（裸 kind 行即可满足正向校验）。
+	mustWrite(t, filepath.Join(repoRoot, "config/crd/somekind.yaml"), "kind: SomeKind\n")
+	// 未登记的新 CRD：完整 CustomResourceDefinition manifest。
+	mustWrite(t, filepath.Join(repoRoot, "config/crd/newkind.yaml"), `apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: newkinds.example.com
+spec:
+  names:
+    kind: NewKind
+`)
+
+	capDir := filepath.Join(specDir, "capabilities", "D1-demo")
+	mustWrite(t, filepath.Join(capDir, "spec.md"), `# demo
+
+### REQ-D1-01: 合法需求 (P0)
+#### Scenario: 正常场景
+- GIVEN 前置条件
+- WHEN 触发操作
+- THEN 系统 SHALL 产出结果
+`)
+	mustWrite(t, filepath.Join(capDir, "anchors.yaml"),
+		"capability: D1\nrepos:\n  tektoncd-operator:\n    paths:\n      - testing/features/**\n    crds: [SomeKind]\n")
+	mustWrite(t, filepath.Join(specDir, "sync/repos.yaml"),
+		"repos:\n  tektoncd-operator:\n    url: unused\n    branch: main\n    local: true\n")
+	mustWrite(t, filepath.Join(specDir, "sync/drift-check.yaml"), "ignore: []\n")
+
+	findings, err := Run(specDir, filepath.Join(root, "work"), repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var uncovered int
+	for _, f := range findings {
+		if f.Check == "crd-uncovered" {
+			uncovered++
+			if !strings.Contains(f.Detail, "NewKind") {
+				t.Errorf("finding 应指向 NewKind: %+v", f)
+			}
+		}
+	}
+	if uncovered != 1 {
+		t.Fatalf("want 1 crd-uncovered finding, got %+v", findings)
+	}
+
+	// 列入 ignoreCRDs 后豁免。
+	mustWrite(t, filepath.Join(specDir, "sync/drift-check.yaml"), "ignore: []\nignoreCRDs: [NewKind]\n")
+	findings, err = Run(specDir, filepath.Join(root, "work"), repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range findings {
+		if f.Check == "crd-uncovered" {
+			t.Fatalf("ignoreCRDs 应豁免, got %+v", f)
+		}
+	}
+}
+
 // TestRun_SkipsNonDirEntries：capabilities/ 下的非目录条目（如 .DS_Store）被跳过，不产生 finding。
 func TestRun_SkipsNonDirEntries(t *testing.T) {
 	root := t.TempDir()

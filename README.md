@@ -9,7 +9,8 @@
 # 生成 spec/ 脚手架（生成即通过 check）
 driftcheck init --plugin-name gitlab --spec-repo AlaudaDevops/gitlab-chart
 
-# 结构校验：REQ/Scenario 格式、模糊词 lint、anchors 路径与 CRD 有效性
+# 结构校验：REQ/Scenario 格式、模糊词 lint、anchors 路径与 CRD 有效性、
+# 反向 CRD 哨兵（已定义但未被 anchors 登记的 CRD → crd-uncovered，豁免用 ignoreCRDs）
 driftcheck check --spec-dir spec --work-dir /tmp/repos --local-repo-root .
 
 # PR 漂移提醒：变更文件命中锚点 → 发/幂等更新 PR 评论（无 GITHUB_TOKEN 时只打印）
