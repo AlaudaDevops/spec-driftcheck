@@ -2,6 +2,7 @@
 package report
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -25,4 +26,13 @@ func Render(findings []runner.Finding) string {
 	}
 	b.WriteString("\n处理方式：更新 spec/对应 REQ，或在 spec/sync/drift-check.yaml 中附原因临时豁免。\n")
 	return b.String()
+}
+
+// RenderJSON 输出 findings 的 JSON 数组（零 findings 输出 []，供下游 jq 消费）。
+func RenderJSON(findings []runner.Finding) (string, error) {
+	if len(findings) == 0 {
+		return "[]", nil
+	}
+	data, err := json.MarshalIndent(findings, "", "  ")
+	return string(data), err
 }

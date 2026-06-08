@@ -76,17 +76,29 @@ func runCheck(args []string) error {
 	specDir := fs.String("spec-dir", "", "spec 目录（含 capabilities/ 与 sync/）")
 	workDir := fs.String("work-dir", "/tmp/driftcheck-repos", "跨仓库克隆工作目录")
 	localRoot := fs.String("local-repo-root", "", "local 仓库（tektoncd-operator）根目录")
+	format := fs.String("format", "text", "输出格式：text|json")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if *specDir == "" || *localRoot == "" {
 		return fmt.Errorf("--spec-dir 与 --local-repo-root 必填")
 	}
+	if *format != "text" && *format != "json" {
+		return fmt.Errorf("未知 --format %q（支持 text|json）", *format)
+	}
 	findings, err := runner.Run(*specDir, *workDir, *localRoot)
 	if err != nil {
 		return err
 	}
-	fmt.Print(report.Render(findings))
+	if *format == "json" {
+		out, err := report.RenderJSON(findings)
+		if err != nil {
+			return err
+		}
+		fmt.Println(out)
+	} else {
+		fmt.Print(report.Render(findings))
+	}
 	if len(findings) > 0 {
 		os.Exit(1)
 	}
