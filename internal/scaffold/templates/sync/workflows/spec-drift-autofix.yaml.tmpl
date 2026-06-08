@@ -57,14 +57,16 @@ jobs:
       - name: guardrails
         if: steps.check.outputs.drifted == 'true'
         # 确定性护栏，不信任 prompt 约束：改动只许落在 spec/ 内，且禁改豁免配置。
+        # 用 git status --porcelain 覆盖未追踪新文件 + 暂存 + 未暂存改动。
         run: |
-          changed=$(git diff --name-only)
-          echo "agent 改动文件："; echo "$changed"
-          outside=$(echo "$changed" | grep -v '^spec/' || true)
+          changed=$(git status --porcelain)
+          echo "agent 改动："; echo "$changed"
+          paths=$(echo "$changed" | cut -c4-)
+          outside=$(echo "$paths" | grep -v '^$' | grep -v '^spec/' || true)
           if [ -n "$outside" ]; then
             echo "护栏违规：改动超出 spec/：" >&2; echo "$outside" >&2; exit 1
           fi
-          if echo "$changed" | grep -q '^spec/sync/drift-check.yaml$'; then
+          if echo "$paths" | grep -q '^spec/sync/drift-check.yaml$'; then
             echo "护栏违规：禁止修改 spec/sync/drift-check.yaml（豁免是人的特权）" >&2; exit 1
           fi
       - name: verify green
