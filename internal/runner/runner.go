@@ -17,10 +17,10 @@ import (
 
 // Finding 是一处漂移。
 type Finding struct {
-	Capability string
-	ReqID      string // anchors/CRD 级问题为空；fuzzy-word 可留空（见 Detail）
-	Check      string // spec-structure | fuzzy-word | anchor-path | crd-defined | crd-uncovered
-	Detail     string
+	Capability string `json:"capability"`
+	ReqID      string `json:"reqId"` // anchors/CRD 级问题为空；fuzzy-word 可留空（见 Detail）
+	Check      string `json:"check"` // spec-structure | fuzzy-word | anchor-path | crd-defined | crd-uncovered
+	Detail     string `json:"detail"`
 }
 
 type ignoreFile struct {
